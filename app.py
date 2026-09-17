@@ -41,6 +41,13 @@ try:
 except ImportError:
     HAS_AUDIO = False
 
+try:
+    from pycaw.pycaw import AudioUtilities
+
+    HAS_VOLUME_CONTROL = True
+except ImportError:
+    HAS_VOLUME_CONTROL = False
+
 OUTPUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "recordings")
 FPS = 15
 AUDIO_CHUNK = 1024
@@ -74,7 +81,7 @@ class RecorderApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Grabador de ventana")
-        self.root.geometry("520x690")
+        self.root.geometry("520x750")
         self.root.resizable(False, False)
 
         self.windows = []
@@ -93,6 +100,9 @@ class RecorderApp:
         self._frame_lock = threading.Lock()
         self._latest_frame = None  # último frame BGR capturado (para el preview)
         self._preview_photo = None  # referencia viva para que Tkinter no la recolecte
+
+        self.volume_endpoint = self._get_volume_endpoint()
+        self.volume_available = self.volume_endpoint is not None
 
         self._build_ui()
         self.refresh_windows()
@@ -156,6 +166,37 @@ class RecorderApp:
         if not HAS_AUDIO:
             audio_check.config(state="disabled")
             self.audio_var.set(False)
+
+        # --- Volumen del sistema (para no tener que salir de la app) ---
+        volume_frame = ttk.Frame(self.root)
+        volume_frame.pack(fill="x", **pad)
+
+        ttk.Label(volume_frame, text="Volumen de la PC:").pack(anchor="w")
+
+        volume_row = ttk.Frame(volume_frame)
+        volume_row.pack(fill="x", pady=(4, 0))
+
+        initial_percent = self._get_current_volume_percent()
+        self.volume_var = tk.IntVar(value=initial_percent)
+
+        self.volume_scale = ttk.Scale(
+            volume_row,
+            from_=0,
+            to=100,
+            orient="horizontal",
+        )
+        self.volume_scale.pack(side="left", fill="x", expand=True)
+
+        self.volume_label = ttk.Label(volume_row, text=f"{initial_percent}%", width=5)
+        self.volume_label.pack(side="left", padx=(6, 0))
+
+        # El valor inicial se fija sin disparar el cambio de volumen real
+        # (el callback recién se conecta después de posicionar la barra).
+        self.volume_scale.set(initial_percent)
+        self.volume_scale.config(command=self._on_volume_change)
+
+        if not self.volume_available:
+            self.volume_scale.config(state="disabled")
 
         # --- Ubicación y nombre de guardado ---
         save_frame = ttk.Frame(self.root)
@@ -231,6 +272,46 @@ class RecorderApp:
                 foreground="#a33",
                 wraplength=480,
             ).pack(anchor="w", padx=10)
+
+        if not self.volume_available:
+            ttk.Label(
+                self.root,
+                text="(No se pudo acceder al volumen del sistema: instala pycaw/comtypes)",
+                foreground="#a33",
+                wraplength=480,
+            ).pack(anchor="w", padx=10)
+
+    # ------------------------------------------------------------------
+    # Volumen del sistema
+    # ------------------------------------------------------------------
+    def _get_volume_endpoint(self):
+        if not HAS_VOLUME_CONTROL:
+            return None
+        try:
+            speakers = AudioUtilities.GetSpeakers()
+            return speakers.EndpointVolume
+        except Exception:
+            return None
+
+    def _get_current_volume_percent(self):
+        if not getattr(self, "volume_available", False) or self.volume_endpoint is None:
+            return 50
+        try:
+            scalar = self.volume_endpoint.GetMasterVolumeLevelScalar()
+            return round(scalar * 100)
+        except Exception:
+            return 50
+
+    def _on_volume_change(self, value):
+        percent = round(float(value))
+        self.volume_var.set(percent)
+        self.volume_label.config(text=f"{percent}%")
+
+        if self.volume_available and self.volume_endpoint is not None:
+            try:
+                self.volume_endpoint.SetMasterVolumeLevelScalar(percent / 100.0, None)
+            except Exception:
+                pass
 
     # ------------------------------------------------------------------
     # Vista previa

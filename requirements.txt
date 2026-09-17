@@ -6,3 +6,5 @@ numpy
 PyAudioWPatch
 imageio-ffmpeg
 Pillow
+pycaw
+comtypes

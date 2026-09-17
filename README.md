@@ -21,6 +21,10 @@ reproducir el resultado al finalizar.
   dispositivo predeterminado (loopback WASAPI) usando
   [`PyAudioWPatch`](https://pypi.org/project/PyAudioWPatch/), de forma
   simultánea al video.
+- **Control de volumen de la PC**: una barra deslizante controla el
+  volumen general de salida de Windows (usando
+  [`pycaw`](https://pypi.org/project/pycaw/)) sin salir de la app ni
+  interrumpir el video que estás viendo/grabando.
 - **Pausa / reanudar**: pausa la grabación (video y audio) sin detenerla;
   el tiempo en pausa no queda incluido en el archivo final.
 - **Guardar como...**: permite elegir la carpeta y el nombre del archivo
@@ -63,6 +67,8 @@ Dependencias incluidas en `requirements.txt`:
 | `PyAudioWPatch`   | Captura de audio del sistema vía loopback WASAPI       |
 | `imageio-ffmpeg`  | Binario de `ffmpeg` listo para usar (sin instalación aparte) |
 | `Pillow`          | Generar la imagen de la vista previa en la interfaz    |
+| `pycaw`           | Leer y ajustar el volumen general de Windows           |
+| `comtypes`        | Dependencia de `pycaw` para llamar a las APIs COM de Windows |
 
 ## Uso
 
@@ -79,21 +85,24 @@ python app.py
 2. En la app, pulsa **Actualizar** si la ventana no aparece en la lista, y
    selecciónala en el desplegable.
 3. (Opcional) Marca o desmarca **"Grabar también el audio del sistema"**.
-4. (Opcional) Pulsa **Guardar como...** para elegir en qué carpeta y con
+4. (Opcional) Ajusta la barra **"Volumen de la PC"** para subir o bajar
+   el volumen general de Windows sin interrumpir el video ni salir de la
+   app.
+5. (Opcional) Pulsa **Guardar como...** para elegir en qué carpeta y con
    qué nombre se guardará el video. El diálogo siempre fuerza la
    extensión `.mp4`, aunque escribas otra (por ejemplo, `video.avi` se
    guardará igualmente como `video.mp4`). Si no eliges nada, el video se
    guarda automáticamente en `recordings/` con un nombre basado en la
    fecha y hora.
-5. Pulsa **Iniciar grabación**. La ventana seleccionada se traerá al frente
+6. Pulsa **Iniciar grabación**. La ventana seleccionada se traerá al frente
    y comenzará la captura; la vista previa mostrará lo que se está
    grabando.
-6. Usa **Pausar / Reanudar** para pausar temporalmente sin cortar la
+7. Usa **Pausar / Reanudar** para pausar temporalmente sin cortar la
    grabación.
-7. Pulsa **Detener** para finalizar. La app recomprime automáticamente el
+8. Pulsa **Detener** para finalizar. La app recomprime automáticamente el
    video (esto puede tardar unos segundos según la duración) y muestra la
    ruta del archivo final junto con su tamaño en MB.
-8. Pulsa **Reproducir** para abrir el video con el reproductor
+9. Pulsa **Reproducir** para abrir el video con el reproductor
    predeterminado de Windows.
 
 Si no usaste "Guardar como...", los videos se guardan en la carpeta
@@ -135,6 +144,9 @@ archivo `.spec` generados por PyInstaller no se versionan (ver
 - Si `PyAudioWPatch` no se pudo instalar o inicializar, la app sigue
   funcionando pero solo grabará video (el checkbox de audio aparece
   deshabilitado y se muestra un aviso en la interfaz).
+- Si `pycaw` no se pudo instalar o inicializar, la barra de volumen
+  aparece deshabilitada y se muestra un aviso; el resto de la app sigue
+  funcionando con normalidad.
 - **La app no automatiza inicios de sesión**: el campo "Abrir video (URL)"
   solo abre el link en tu navegador (`webbrowser.open`); no guarda,
   escribe ni gestiona usuarios o contraseñas de ningún servicio (Google
