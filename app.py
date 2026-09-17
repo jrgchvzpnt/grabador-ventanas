@@ -1,10 +1,18 @@
 """
 Grabador de ventanas (por ejemplo, una ventana del navegador), con audio,
-pausa y vista previa en vivo.
+pausa, cronómetro y vista previa en vivo.
 
-Permite elegir una ventana abierta de la lista, grabarla en video (.mp4)
-junto con el audio del sistema, pausar/reanudar la grabación, ver una
-vista previa mientras se graba, y reproducir el resultado al finalizar.
+Permite elegir una ventana abierta de la lista, grabarla en video junto
+con el audio del sistema, pausar/reanudar la grabación, ver una vista
+previa y un cronómetro mientras se graba, y reproducir el resultado al
+finalizar.
+
+El video se codifica EN VIVO (cuadro a cuadro, vía un pipe a ffmpeg) ya en
+el códec final del formato elegido, mientras se está grabando. Por eso,
+al pulsar "Detener": si no hay audio, el archivo ya está listo al
+instante; si hay audio, solo falta una mezcla rápida (copia el video sin
+recodificar, únicamente codifica el audio), muchísimo más rápida que una
+recompresión completa al final.
 
 Nota sobre el audio: Windows no permite capturar el audio de UNA sola
 ventana/pestaña de forma sencilla. Lo que se graba es el audio de salida
@@ -55,30 +63,36 @@ PREVIEW_SIZE = (480, 270)  # 16:9
 PREVIEW_INTERVAL_MS = 200
 
 # Formatos de video disponibles para exportar (video/audio + contenedor).
+# El video se codifica EN VIVO mientras se graba (no al detener), por eso
+# "video_args_live" usa ajustes rápidos (aptos para tiempo real) en vez de
+# los más lentos/compresivos que se usarían en una conversión offline.
 FORMAT_OPTIONS = {
     "MP4 (.mp4)": {
         "ext": ".mp4",
-        "video_args": ["-c:v", "libx264", "-preset", "slow", "-crf", "23", "-pix_fmt", "yuv420p"],
+        "video_args_live": ["-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-pix_fmt", "yuv420p"],
         "audio_args": ["-c:a", "aac", "-b:a", "128k"],
     },
     "MKV (.mkv)": {
         "ext": ".mkv",
-        "video_args": ["-c:v", "libx264", "-preset", "slow", "-crf", "23", "-pix_fmt", "yuv420p"],
+        "video_args_live": ["-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-pix_fmt", "yuv420p"],
         "audio_args": ["-c:a", "aac", "-b:a", "128k"],
     },
     "MOV (.mov)": {
         "ext": ".mov",
-        "video_args": ["-c:v", "libx264", "-preset", "slow", "-crf", "23", "-pix_fmt", "yuv420p"],
+        "video_args_live": ["-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-pix_fmt", "yuv420p"],
         "audio_args": ["-c:a", "aac", "-b:a", "128k"],
     },
     "AVI (.avi)": {
         "ext": ".avi",
-        "video_args": ["-c:v", "libxvid", "-qscale:v", "4", "-tag:v", "XVID"],
+        "video_args_live": ["-c:v", "libxvid", "-qscale:v", "4", "-tag:v", "XVID"],
         "audio_args": ["-c:a", "libmp3lame", "-b:a", "192k"],
     },
     "WEBM (.webm)": {
         "ext": ".webm",
-        "video_args": ["-c:v", "libvpx-vp9", "-crf", "32", "-b:v", "0", "-pix_fmt", "yuv420p"],
+        "video_args_live": [
+            "-c:v", "libvpx-vp9", "-crf", "32", "-b:v", "0", "-pix_fmt", "yuv420p",
+            "-deadline", "realtime", "-cpu-used", "8",
+        ],
         "audio_args": ["-c:a", "libopus", "-b:a", "128k"],
     },
 }
@@ -134,6 +148,11 @@ class RecorderApp:
 
         self.volume_endpoint = self._get_volume_endpoint()
         self.volume_available = self.volume_endpoint is not None
+
+        # --- Cronómetro de grabación ---
+        self._rec_start_ts = None  # time.time() al iniciar la grabación actual
+        self._paused_total = 0.0  # segundos acumulados en pausa (pausas ya cerradas)
+        self._pause_start_ts = None  # time.time() en que empezó la pausa actual
 
         self._build_ui()
         self.refresh_windows()
@@ -265,6 +284,15 @@ class RecorderApp:
         )
         self.save_btn.pack(side="left", padx=(6, 0))
 
+        # --- Cronómetro ---
+        self.timer_var = tk.StringVar(value="00:00.000")
+        tk.Label(
+            self.root,
+            textvariable=self.timer_var,
+            font=("Consolas", 22, "bold"),
+            fg="#1a4d7a",
+        ).pack(pady=(6, 0))
+
         # --- Vista previa ---
         preview_frame = ttk.Frame(self.root)
         preview_frame.pack(padx=10, pady=(8, 4))
@@ -394,7 +422,35 @@ class RecorderApp:
                 self._preview_photo = ImageTk.PhotoImage(img)
                 self.preview_label.config(image=self._preview_photo)
 
+        self._update_timer_display()
         self.root.after(PREVIEW_INTERVAL_MS, self._update_preview)
+
+    # ------------------------------------------------------------------
+    # Cronómetro
+    # ------------------------------------------------------------------
+    def _get_elapsed_seconds(self):
+        if self._rec_start_ts is None:
+            return 0.0
+        now = time.time()
+        paused = self._paused_total
+        if self.paused and self._pause_start_ts is not None:
+            paused += now - self._pause_start_ts
+        return max(0.0, now - self._rec_start_ts - paused)
+
+    @staticmethod
+    def _format_elapsed(seconds):
+        total_ms = int(seconds * 1000)
+        hours, rem_ms = divmod(total_ms, 3_600_000)
+        minutes, rem_ms = divmod(rem_ms, 60_000)
+        secs, ms = divmod(rem_ms, 1000)
+        if hours > 0:
+            return f"{hours:02d}:{minutes:02d}:{secs:02d}.{ms:03d}"
+        return f"{minutes:02d}:{secs:02d}.{ms:03d}"
+
+    def _update_timer_display(self):
+        if self.recording:
+            elapsed = self._get_elapsed_seconds()
+            self.timer_var.set(self._format_elapsed(elapsed))
 
     # ------------------------------------------------------------------
     # Abrir video por URL
@@ -510,6 +566,13 @@ class RecorderApp:
             messagebox.showerror("Error", "La ventana seleccionada no es válida.")
             return
 
+        # libx264/libvpx-vp9 con yuv420p requieren ancho y alto pares.
+        width -= width % 2
+        height -= height % 2
+        if width <= 0 or height <= 0:
+            messagebox.showerror("Error", "La ventana seleccionada no es válida.")
+            return
+
         os.makedirs(OUTPUT_DIR, exist_ok=True)
         stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
 
@@ -525,7 +588,10 @@ class RecorderApp:
         want_audio = self.audio_var.get() and HAS_AUDIO
         self._recording_audio = False
 
-        self._video_tmp = os.path.join(OUTPUT_DIR, f".tmp_video_{stamp}.mp4")
+        # El video temporal ya queda codificado EN VIVO con el códec final
+        # del formato elegido (por eso comparte su extensión); al detener
+        # solo falta mezclarle el audio (si lo hay), no volver a codificarlo.
+        self._video_tmp = os.path.join(OUTPUT_DIR, f".tmp_video_{stamp}{ext}")
         self._audio_tmp = (
             os.path.join(OUTPUT_DIR, f".tmp_audio_{stamp}.wav") if want_audio else None
         )
@@ -533,9 +599,14 @@ class RecorderApp:
         self.paused = False
         self.recording = True
 
+        self._rec_start_ts = time.time()
+        self._paused_total = 0.0
+        self._pause_start_ts = None
+        self.timer_var.set("00:00.000")
+
         self.record_thread = threading.Thread(
             target=self._record_video_loop,
-            args=(left, top, width, height, self._video_tmp),
+            args=(left, top, width, height, self._video_tmp, self._recording_format),
             daemon=True,
         )
         self.record_thread.start()
@@ -578,15 +649,38 @@ class RecorderApp:
             return
         self.paused = not self.paused
         if self.paused:
+            self._pause_start_ts = time.time()
             self.pause_btn.config(text="Reanudar")
             self.status_var.set("Grabación en pausa.")
         else:
+            if self._pause_start_ts is not None:
+                self._paused_total += time.time() - self._pause_start_ts
+                self._pause_start_ts = None
             self.pause_btn.config(text="Pausar")
             self.status_var.set("Grabando...")
 
-    def _record_video_loop(self, left, top, width, height, filename):
-        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-        writer = cv2.VideoWriter(filename, fourcc, FPS, (width, height))
+    def _record_video_loop(self, left, top, width, height, filename, fmt):
+        """Captura la ventana y la codifica EN VIVO (cuadro a cuadro) con
+        ffmpeg vía pipe, ya en el códec final del formato elegido. Así, al
+        pulsar Detener, el video ya está terminado (no hace falta esperar
+        una recompresión posterior)."""
+        ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+        cmd = [
+            ffmpeg_exe, "-y",
+            "-f", "rawvideo",
+            "-pixel_format", "bgr24",
+            "-video_size", f"{width}x{height}",
+            "-framerate", str(FPS),
+            "-i", "pipe:0",
+        ] + fmt["video_args_live"] + [filename]
+
+        proc = subprocess.Popen(
+            cmd,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+
         monitor = {"left": left, "top": top, "width": width, "height": height}
         frame_interval = 1.0 / FPS
 
@@ -601,7 +695,11 @@ class RecorderApp:
 
                     img = np.array(sct.grab(monitor))
                     frame = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
-                    writer.write(frame)
+
+                    try:
+                        proc.stdin.write(frame.tobytes())
+                    except (BrokenPipeError, OSError):
+                        break
 
                     with self._frame_lock:
                         self._latest_frame = frame
@@ -613,7 +711,14 @@ class RecorderApp:
                     else:
                         next_time = time.time()
         finally:
-            writer.release()
+            try:
+                proc.stdin.close()
+            except Exception:
+                pass
+            try:
+                proc.wait(timeout=30)
+            except Exception:
+                proc.kill()
 
     def _record_audio_loop(self, audio_path):
         p = pyaudio.PyAudio()
@@ -685,25 +790,37 @@ class RecorderApp:
             and os.path.getsize(self._audio_tmp) > 44
             and self._recording_audio
         )
-        audio_path = self._audio_tmp if has_audio_file else None
-
-        self.status_var.set("Comprimiendo video...")
-        self.root.update_idletasks()
 
         fmt = getattr(self, "_recording_format", FORMAT_OPTIONS[DEFAULT_FORMAT])
 
-        if self._encode_output(self._video_tmp, audio_path, self.output_path, fmt):
-            self._cleanup_temp_files()
+        if has_audio_file:
+            # El video ya está codificado (se hizo en vivo mientras se
+            # grababa); aquí solo se le añade la pista de audio, algo mucho
+            # más rápido que recomprimir todo el video de nuevo.
+            self.status_var.set("Combinando audio (esto es rápido)...")
+            self.root.update_idletasks()
+
+            if self._mux_audio(self._video_tmp, self._audio_tmp, self.output_path, fmt):
+                self._cleanup_temp_files()
+            else:
+                self.output_path = self._video_tmp
+                self.status_var.set(
+                    "No se pudo combinar el audio; se guardó el video (sin audio)."
+                )
+                self.play_btn.config(state="normal")
+                return
         else:
-            # Si falla la conversión al formato elegido, nos quedamos con el
-            # video sin comprimir (siempre en .mp4) para no perder la
-            # grabación.
-            self.output_path = self._video_tmp
-            self.status_var.set(
-                "No se pudo generar el formato elegido; se guardó un .mp4 sin comprimir."
-            )
-            self.play_btn.config(state="normal")
-            return
+            # Sin audio: el video temporal YA es el archivo final (se
+            # codificó en tiempo real durante la grabación), así que solo
+            # falta moverlo a su destino. Nada de esperar aquí.
+            try:
+                if self._video_tmp and self._video_tmp != self.output_path:
+                    os.replace(self._video_tmp, self.output_path)
+            except OSError as exc:
+                self.status_var.set(f"No se pudo guardar el archivo final: {exc}")
+                self.play_btn.config(state="normal")
+                return
+            self._cleanup_temp_files()
 
         if self.output_path and os.path.exists(self.output_path):
             size_mb = os.path.getsize(self.output_path) / (1024 * 1024)
@@ -714,22 +831,18 @@ class RecorderApp:
         else:
             self.status_var.set("La grabación no se guardó correctamente.")
 
-    def _encode_output(self, video_path, audio_path, out_path, fmt):
-        """Recomprime el video capturado (mp4v sin comprimir) al formato
-        elegido por el usuario, opcionalmente muxeando el audio, para
-        reducir el tamaño del archivo conservando buena calidad visual."""
+    def _mux_audio(self, video_path, audio_path, out_path, fmt):
+        """Añade la pista de audio al video ya codificado (copia el video
+        tal cual, solo se codifica el audio), por lo que es una operación
+        rápida sin importar cuánto dure la grabación."""
         try:
             ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
-            cmd = [ffmpeg_exe, "-y", "-i", video_path]
-            if audio_path:
-                cmd += ["-i", audio_path]
-
-            cmd += fmt["video_args"]
-
-            if audio_path:
-                cmd += fmt["audio_args"] + ["-shortest"]
-
-            cmd += [out_path]
+            cmd = [
+                ffmpeg_exe, "-y",
+                "-i", video_path,
+                "-i", audio_path,
+                "-c:v", "copy",
+            ] + fmt["audio_args"] + ["-shortest", out_path]
 
             result = subprocess.run(
                 cmd,

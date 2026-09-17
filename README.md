@@ -3,8 +3,12 @@
 Aplicación de escritorio en Python (Tkinter) para **Windows** que permite
 seleccionar una ventana abierta (por ejemplo, una ventana o pestaña del
 navegador), grabarla en video, capturar el audio del sistema, pausar y
-reanudar la grabación, ver una vista previa en vivo mientras grabas, y
-reproducir el resultado al finalizar.
+reanudar la grabación, ver una vista previa y un cronómetro en vivo
+mientras grabas, y reproducir el resultado al finalizar.
+
+El video se codifica **en tiempo real** mientras grabas (no al final), así
+que al pulsar "Detener" el archivo queda listo casi al instante — no hay
+que esperar una recompresión larga.
 
 ## Características
 
@@ -27,6 +31,9 @@ reproducir el resultado al finalizar.
   interrumpir el video que estás viendo/grabando.
 - **Pausa / reanudar**: pausa la grabación (video y audio) sin detenerla;
   el tiempo en pausa no queda incluido en el archivo final.
+- **Cronómetro en vivo**: muestra el tiempo grabado (MM:SS.mmm, u
+  HH:MM:SS.mmm si pasa de una hora) desde que arranca la grabación,
+  descontando el tiempo que estuvo en pausa.
 - **Formato de video**: un combo para elegir el formato de salida entre
   los más populares — **MP4, MKV, MOV, AVI y WEBM**. Cada uno usa el
   códec de video/audio más adecuado para ese contenedor (por ejemplo
@@ -37,10 +44,12 @@ reproducir el resultado al finalizar.
 - **Vista previa en vivo**: muestra en la propia ventana de la app el
   contenido que se está grabando en tiempo real, con un indicador
   "PAUSADO" superpuesto cuando corresponde.
-- **Compresión automática**: al detener la grabación, el video (capturado
-  internamente sin comprimir) se recodifica usando `ffmpeg` al formato
-  elegido, reduciendo bastante el tamaño del archivo sin pérdida notable
-  de calidad. El audio se mezcla en el mismo paso.
+- **Codificación en tiempo real**: el video se codifica cuadro a cuadro
+  mientras grabas (mediante un pipe a `ffmpeg`), ya en el códec final del
+  formato elegido. Al pulsar "Detener": si no grabaste audio, el archivo
+  ya está listo al instante; si grabaste audio, solo falta una mezcla
+  rápida (el video se copia tal cual, solo se codifica el audio), muchísimo
+  más veloz que recomprimir todo el video de nuevo.
 - **Reproducción**: botón para abrir la grabación resultante con el
   reproductor de video predeterminado de Windows.
 
@@ -101,15 +110,18 @@ python app.py
    guarda automáticamente en `recordings/` con un nombre basado en la
    fecha y hora.
 7. Pulsa **Iniciar grabación**. La ventana seleccionada se traerá al frente
-   y comenzará la captura; la vista previa mostrará lo que se está
-   grabando.
+   y comenzará la captura; la vista previa y el cronómetro mostrarán lo
+   que se está grabando y cuánto tiempo lleva.
 8. Usa **Pausar / Reanudar** para pausar temporalmente sin cortar la
-   grabación.
-9. Pulsa **Detener** para finalizar. La app recomprime automáticamente el
-   video (esto puede tardar unos segundos según la duración) y muestra la
-   ruta del archivo final junto con su tamaño en MB.
-9. Pulsa **Reproducir** para abrir el video con el reproductor
-   predeterminado de Windows.
+   grabación (el cronómetro y el video se detienen mientras está en
+   pausa).
+9. Pulsa **Detener** para finalizar. Como el video ya se codificó en
+   tiempo real mientras grababas, el archivo queda listo casi al instante
+   (si grabaste audio, hay una mezcla rápida de un par de segundos como
+   mucho). La app muestra la ruta del archivo final junto con su tamaño
+   en MB.
+10. Pulsa **Reproducir** para abrir el video con el reproductor
+    predeterminado de Windows.
 
 Si no usaste "Guardar como...", los videos se guardan en la carpeta
 `recordings/` dentro del proyecto, con nombre
@@ -120,11 +132,16 @@ carpeta está excluida del control de versiones (ver `.gitignore`).
 
 | Formato | Video | Audio | Notas |
 |---------|-------|-------|-------|
-| **MP4** (por defecto) | H.264 (`libx264`) | AAC | El más compatible en general; recomendado. |
-| **MKV** | H.264 (`libx264`) | AAC | Contenedor flexible, misma calidad que MP4. |
-| **MOV** | H.264 (`libx264`) | AAC | Compatible con QuickTime/macOS. |
+| **MP4** (por defecto) | H.264 (`libx264`, preset `veryfast`) | AAC | El más compatible en general; recomendado, mejor rendimiento en tiempo real. |
+| **MKV** | H.264 (`libx264`, preset `veryfast`) | AAC | Contenedor flexible, misma calidad que MP4. |
+| **MOV** | H.264 (`libx264`, preset `veryfast`) | AAC | Compatible con QuickTime/macOS. |
 | **AVI** | Xvid (`libxvid`) | MP3 | Formato más antiguo, mayor compatibilidad con reproductores viejos. |
-| **WEBM** | VP9 (`libvpx-vp9`) | Opus | Pensado para web; archivos más livianos. |
+| **WEBM** | VP9 (`libvpx-vp9`, `deadline realtime`) | Opus | Pensado para web; archivos más livianos, pero VP9 es el códec más exigente para codificar en tiempo real. |
+
+Todos se codifican en vivo durante la grabación (no al final). En equipos
+más lentos o con ventanas muy grandes, WEBM (VP9) es el que más
+probabilidades tiene de no alcanzar a codificar en tiempo real; si notás
+que la app se pone lenta al grabar, prueba con MP4.
 
 ## Generar un ejecutable (.exe)
 
@@ -183,20 +200,28 @@ appvideo/
 ## Cómo funciona internamente (resumen técnico)
 
 1. Al iniciar la grabación, se obtiene el rectángulo de la ventana
-   (`win32gui.GetWindowRect`) y se lanza un hilo que captura esa región de
-   pantalla cuadro a cuadro con `mss`, escribiéndolos sin comprimir a un
-   archivo de video temporal (`.tmp_video_*.mp4`, códec `mp4v`).
-2. Si el audio está activado, un segundo hilo abre un stream WASAPI en
+   (`win32gui.GetWindowRect`, ajustado a dimensiones pares) y se lanza un
+   hilo que captura esa región de pantalla cuadro a cuadro con `mss`.
+2. Cada cuadro se envía por un pipe (`stdin`) a un proceso `ffmpeg` (vía
+   `imageio-ffmpeg`) que lo codifica **en tiempo real** ya con el códec
+   final del formato elegido (por ejemplo H.264 con preset `veryfast`
+   para MP4/MKV/MOV), escribiendo directamente el archivo de video
+   temporal (`.tmp_video_*.<ext>`) — no hay una recodificación posterior
+   del video.
+3. Si el audio está activado, un segundo hilo abre un stream WASAPI en
    modo *loopback* con `PyAudioWPatch` y guarda el audio capturado en un
    `.wav` temporal (`.tmp_audio_*.wav`).
-3. Cada cuadro capturado se comparte con la interfaz mediante una
+4. Cada cuadro capturado se comparte con la interfaz mediante una
    variable protegida por un `Lock`, y un bucle periódico de Tkinter
-   (`root.after`) la usa para actualizar la vista previa sin bloquear la
-   grabación.
-4. Al pausar, ambos hilos siguen vivos pero dejan de escribir datos
-   (video) o de acumularlos (audio), por lo que el contenido en pausa no
-   queda en el resultado final.
-5. Al detener, se espera a que ambos hilos terminen y se invoca `ffmpeg`
-   (vía `imageio-ffmpeg`) para recodificar el video temporal a H.264 y
-   mezclar el audio, generando el archivo final en `recordings/`. Los
+   (`root.after`) la usa para actualizar la vista previa y el cronómetro
+   sin bloquear la grabación.
+5. Al pausar, ambos hilos siguen vivos pero dejan de enviar datos al pipe
+   de ffmpeg (video) o de acumular datos (audio); el cronómetro también
+   se congela. Nada de eso queda en el resultado final.
+6. Al detener, se cierra el pipe de ffmpeg (que termina de escribir el
+   archivo de video, ya listo) y se espera a que ambos hilos terminen.
+   Si no hubo audio, el video temporal se mueve directamente a
+   `recordings/` (o a la ruta elegida) sin más procesamiento. Si hubo
+   audio, se hace una mezcla rápida con `ffmpeg` (`-c:v copy`, solo
+   codifica el audio) para combinarlo con el video ya codificado. Los
    archivos temporales se eliminan al terminar.
