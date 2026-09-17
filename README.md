@@ -10,6 +10,10 @@ reproducir el resultado al finalizar.
 
 - **Selección de ventana**: lista todas las ventanas abiertas del sistema y
   permite elegir cuál grabar.
+- **Abrir video por URL (opcional)**: un campo para pegar un link (por
+  ejemplo, un video de Google Drive) que se abre con tu navegador y tu
+  sesión normal. La app **no maneja usuarios ni contraseñas**: solo llama
+  a `webbrowser.open()`, así que inicias sesión tú mismo si hace falta.
 - **Grabación de video**: captura la región de pantalla donde está la
   ventana seleccionada usando [`mss`](https://pypi.org/project/mss/) y
   [`OpenCV`](https://pypi.org/project/opencv-python/).
@@ -67,7 +71,11 @@ python app.py
 ```
 
 1. Abre la ventana/pestaña del navegador (o cualquier otra) que quieras
-   grabar.
+   grabar. Si es un video con link (por ejemplo de Google Drive), puedes
+   pegarlo en el campo **"Abrir video (URL, opcional)"** y pulsar
+   **Abrir**: se abrirá con tu navegador y tu sesión ya iniciada. Si Drive
+   te pide iniciar sesión, hazlo tú mismo en esa pestaña (la app nunca ve
+   ni guarda tu usuario o contraseña).
 2. En la app, pulsa **Actualizar** si la ventana no aparece en la lista, y
    selecciónala en el desplegable.
 3. (Opcional) Marca o desmarca **"Grabar también el audio del sistema"**.
@@ -127,6 +135,11 @@ archivo `.spec` generados por PyInstaller no se versionan (ver
 - Si `PyAudioWPatch` no se pudo instalar o inicializar, la app sigue
   funcionando pero solo grabará video (el checkbox de audio aparece
   deshabilitado y se muestra un aviso en la interfaz).
+- **La app no automatiza inicios de sesión**: el campo "Abrir video (URL)"
+  solo abre el link en tu navegador (`webbrowser.open`); no guarda,
+  escribe ni gestiona usuarios o contraseñas de ningún servicio (Google
+  Drive, Teams, etc.). Cualquier inicio de sesión lo haces tú manualmente
+  en la pestaña que se abre.
 
 ## Estructura del proyecto
 

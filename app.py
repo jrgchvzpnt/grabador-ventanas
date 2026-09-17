@@ -23,6 +23,7 @@ import threading
 import time
 import tkinter as tk
 import wave
+import webbrowser
 from tkinter import filedialog, messagebox, ttk
 
 import cv2
@@ -73,7 +74,7 @@ class RecorderApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Grabador de ventana")
-        self.root.geometry("520x610")
+        self.root.geometry("520x690")
         self.root.resizable(False, False)
 
         self.windows = []
@@ -100,6 +101,35 @@ class RecorderApp:
 
     def _build_ui(self):
         pad = {"padx": 10, "pady": 6}
+
+        # --- Abrir video por URL (opcional, no maneja credenciales) ---
+        open_frame = ttk.Frame(self.root)
+        open_frame.pack(fill="x", **pad)
+
+        ttk.Label(open_frame, text="Abrir video (URL, opcional):").pack(anchor="w")
+
+        open_row = ttk.Frame(open_frame)
+        open_row.pack(fill="x", pady=(4, 0))
+
+        self.url_var = tk.StringVar()
+        self.url_entry = ttk.Entry(open_row, textvariable=self.url_var)
+        self.url_entry.pack(side="left", fill="x", expand=True)
+
+        ttk.Button(open_row, text="Abrir", command=self.open_video_url).pack(
+            side="left", padx=(6, 0)
+        )
+
+        ttk.Label(
+            self.root,
+            text=(
+                "Se abre en tu navegador con tu sesión normal (la app no maneja "
+                "usuarios ni contraseñas). Inicia sesión si te lo pide, dale "
+                "reproducir y luego selecciona esa ventana abajo."
+            ),
+            foreground="#888",
+            wraplength=480,
+            justify="left",
+        ).pack(anchor="w", padx=10)
 
         top_frame = ttk.Frame(self.root)
         top_frame.pack(fill="x", **pad)
@@ -237,6 +267,29 @@ class RecorderApp:
                 self.preview_label.config(image=self._preview_photo)
 
         self.root.after(PREVIEW_INTERVAL_MS, self._update_preview)
+
+    # ------------------------------------------------------------------
+    # Abrir video por URL
+    # ------------------------------------------------------------------
+    def open_video_url(self):
+        url = self.url_var.get().strip()
+        if not url:
+            messagebox.showwarning("Aviso", "Pega primero el link del video.")
+            return
+        if not (url.startswith("http://") or url.startswith("https://")):
+            messagebox.showwarning(
+                "Aviso", "El link debe comenzar con http:// o https://"
+            )
+            return
+
+        webbrowser.open(url)
+        self.status_var.set(
+            "Abriendo el video en tu navegador... inicia sesión si te lo pide, "
+            "dale reproducir y luego elige esa ventana en la lista."
+        )
+        # Le damos tiempo al navegador a abrir la ventana antes de refrescar
+        # la lista, así aparece disponible para seleccionarla.
+        self.root.after(2500, self.refresh_windows)
 
     # ------------------------------------------------------------------
     # Ubicación de guardado
