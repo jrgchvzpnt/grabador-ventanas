@@ -23,7 +23,7 @@ import threading
 import time
 import tkinter as tk
 import wave
-from tkinter import messagebox, ttk
+from tkinter import filedialog, messagebox, ttk
 
 import cv2
 import imageio_ffmpeg
@@ -73,7 +73,7 @@ class RecorderApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Grabador de ventana")
-        self.root.geometry("520x560")
+        self.root.geometry("520x610")
         self.root.resizable(False, False)
 
         self.windows = []
@@ -85,6 +85,9 @@ class RecorderApp:
         self._video_tmp = None
         self._audio_tmp = None
         self._recording_audio = False
+
+        self.custom_output_path = None  # ruta elegida por el usuario (o None = automática)
+        self._last_save_dir = OUTPUT_DIR
 
         self._frame_lock = threading.Lock()
         self._latest_frame = None  # último frame BGR capturado (para el preview)
@@ -123,6 +126,26 @@ class RecorderApp:
         if not HAS_AUDIO:
             audio_check.config(state="disabled")
             self.audio_var.set(False)
+
+        # --- Ubicación y nombre de guardado ---
+        save_frame = ttk.Frame(self.root)
+        save_frame.pack(fill="x", **pad)
+
+        ttk.Label(save_frame, text="Guardar en:").pack(anchor="w")
+
+        save_row = ttk.Frame(save_frame)
+        save_row.pack(fill="x", pady=(4, 0))
+
+        self.save_path_var = tk.StringVar(value="Automático (carpeta recordings/)")
+        self.save_path_entry = ttk.Entry(
+            save_row, textvariable=self.save_path_var, state="readonly"
+        )
+        self.save_path_entry.pack(side="left", fill="x", expand=True)
+
+        self.save_btn = ttk.Button(
+            save_row, text="Guardar como...", command=self.choose_save_location
+        )
+        self.save_btn.pack(side="left", padx=(6, 0))
 
         # --- Vista previa ---
         preview_frame = ttk.Frame(self.root)
@@ -216,6 +239,32 @@ class RecorderApp:
         self.root.after(PREVIEW_INTERVAL_MS, self._update_preview)
 
     # ------------------------------------------------------------------
+    # Ubicación de guardado
+    # ------------------------------------------------------------------
+    def choose_save_location(self):
+        default_name = (
+            f"recording_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.mp4"
+        )
+        path = filedialog.asksaveasfilename(
+            title="Guardar grabación como",
+            initialdir=self._last_save_dir,
+            initialfile=default_name,
+            defaultextension=".mp4",
+            filetypes=[("Video MP4", "*.mp4")],
+        )
+        if not path:
+            return
+
+        # Sin importar lo que el usuario haya escrito, la extensión
+        # siempre queda forzada a .mp4.
+        base, _ext = os.path.splitext(path)
+        path = base + ".mp4"
+
+        self.custom_output_path = path
+        self._last_save_dir = os.path.dirname(path)
+        self.save_path_var.set(path)
+
+    # ------------------------------------------------------------------
     # Ventanas
     # ------------------------------------------------------------------
     def refresh_windows(self):
@@ -265,7 +314,12 @@ class RecorderApp:
 
         os.makedirs(OUTPUT_DIR, exist_ok=True)
         stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        self.output_path = os.path.join(OUTPUT_DIR, f"recording_{stamp}.mp4")
+
+        if self.custom_output_path:
+            self.output_path = self.custom_output_path
+            os.makedirs(os.path.dirname(self.output_path), exist_ok=True)
+        else:
+            self.output_path = os.path.join(OUTPUT_DIR, f"recording_{stamp}.mp4")
 
         want_audio = self.audio_var.get() and HAS_AUDIO
         self._recording_audio = False
@@ -304,6 +358,14 @@ class RecorderApp:
         self.stop_btn.config(state="normal")
         self.play_btn.config(state="disabled")
         self.combo.config(state="disabled")
+        self.save_btn.config(state="disabled")
+
+        # Ya se fijó el destino de esta grabación; dejamos el campo listo
+        # para que la próxima vuelva a ser "automática" salvo que el
+        # usuario elija otra vez una ubicación.
+        self.custom_output_path = None
+        self.save_path_var.set("Automático (carpeta recordings/)")
+
         if not (self.audio_var.get() and not HAS_AUDIO):
             self.status_var.set(
                 f"Grabando '{win.title}'... no la cubras con otra ventana."
@@ -411,6 +473,7 @@ class RecorderApp:
         self.pause_btn.config(state="disabled", text="Pausar")
         self.stop_btn.config(state="disabled")
         self.combo.config(state="readonly")
+        self.save_btn.config(state="normal")
         self._show_placeholder_preview("Sin grabación en curso")
 
         has_audio_file = (

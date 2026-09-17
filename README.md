@@ -19,6 +19,9 @@ reproducir el resultado al finalizar.
   simultánea al video.
 - **Pausa / reanudar**: pausa la grabación (video y audio) sin detenerla;
   el tiempo en pausa no queda incluido en el archivo final.
+- **Guardar como...**: permite elegir la carpeta y el nombre del archivo
+  antes de grabar. La extensión queda siempre forzada a `.mp4`, sin
+  importar lo que se escriba en el diálogo.
 - **Vista previa en vivo**: muestra en la propia ventana de la app el
   contenido que se está grabando en tiempo real, con un indicador
   "PAUSADO" superpuesto cuando corresponde.
@@ -63,6 +66,33 @@ Dependencias incluidas en `requirements.txt`:
 python app.py
 ```
 
+1. Abre la ventana/pestaña del navegador (o cualquier otra) que quieras
+   grabar.
+2. En la app, pulsa **Actualizar** si la ventana no aparece en la lista, y
+   selecciónala en el desplegable.
+3. (Opcional) Marca o desmarca **"Grabar también el audio del sistema"**.
+4. (Opcional) Pulsa **Guardar como...** para elegir en qué carpeta y con
+   qué nombre se guardará el video. El diálogo siempre fuerza la
+   extensión `.mp4`, aunque escribas otra (por ejemplo, `video.avi` se
+   guardará igualmente como `video.mp4`). Si no eliges nada, el video se
+   guarda automáticamente en `recordings/` con un nombre basado en la
+   fecha y hora.
+5. Pulsa **Iniciar grabación**. La ventana seleccionada se traerá al frente
+   y comenzará la captura; la vista previa mostrará lo que se está
+   grabando.
+6. Usa **Pausar / Reanudar** para pausar temporalmente sin cortar la
+   grabación.
+7. Pulsa **Detener** para finalizar. La app recomprime automáticamente el
+   video (esto puede tardar unos segundos según la duración) y muestra la
+   ruta del archivo final junto con su tamaño en MB.
+8. Pulsa **Reproducir** para abrir el video con el reproductor
+   predeterminado de Windows.
+
+Si no usaste "Guardar como...", los videos se guardan en la carpeta
+`recordings/` dentro del proyecto, con nombre
+`recording_AAAAMMDD_HHMMSS.mp4`. Esa carpeta está excluida del
+control de versiones (ver `.gitignore`).
+
 ## Generar un ejecutable (.exe)
 
 Si prefieres no instalar Python, puedes empaquetar la app en un único
@@ -78,26 +108,6 @@ tener Python ni las dependencias instaladas (todo, incluido `ffmpeg`,
 queda embebido dentro del `.exe`). Las carpetas `build/`, `dist/` y el
 archivo `.spec` generados por PyInstaller no se versionan (ver
 `.gitignore`).
-
-1. Abre la ventana/pestaña del navegador (o cualquier otra) que quieras
-   grabar.
-2. En la app, pulsa **Actualizar** si la ventana no aparece en la lista, y
-   selecciónala en el desplegable.
-3. (Opcional) Marca o desmarca **"Grabar también el audio del sistema"**.
-4. Pulsa **Iniciar grabación**. La ventana seleccionada se traerá al frente
-   y comenzará la captura; la vista previa mostrará lo que se está
-   grabando.
-5. Usa **Pausar / Reanudar** para pausar temporalmente sin cortar la
-   grabación.
-6. Pulsa **Detener** para finalizar. La app recomprime automáticamente el
-   video (esto puede tardar unos segundos según la duración) y muestra la
-   ruta del archivo final junto con su tamaño en MB.
-7. Pulsa **Reproducir** para abrir el video con el reproductor
-   predeterminado de Windows.
-
-Los videos se guardan en la carpeta `recordings/` dentro del proyecto,
-con nombre `recording_AAAAMMDD_HHMMSS.mp4`. Esa carpeta está excluida del
-control de versiones (ver `.gitignore`).
 
 ## Limitaciones importantes
 
