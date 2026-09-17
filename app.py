@@ -54,6 +54,36 @@ AUDIO_CHUNK = 1024
 PREVIEW_SIZE = (480, 270)  # 16:9
 PREVIEW_INTERVAL_MS = 200
 
+# Formatos de video disponibles para exportar (video/audio + contenedor).
+FORMAT_OPTIONS = {
+    "MP4 (.mp4)": {
+        "ext": ".mp4",
+        "video_args": ["-c:v", "libx264", "-preset", "slow", "-crf", "23", "-pix_fmt", "yuv420p"],
+        "audio_args": ["-c:a", "aac", "-b:a", "128k"],
+    },
+    "MKV (.mkv)": {
+        "ext": ".mkv",
+        "video_args": ["-c:v", "libx264", "-preset", "slow", "-crf", "23", "-pix_fmt", "yuv420p"],
+        "audio_args": ["-c:a", "aac", "-b:a", "128k"],
+    },
+    "MOV (.mov)": {
+        "ext": ".mov",
+        "video_args": ["-c:v", "libx264", "-preset", "slow", "-crf", "23", "-pix_fmt", "yuv420p"],
+        "audio_args": ["-c:a", "aac", "-b:a", "128k"],
+    },
+    "AVI (.avi)": {
+        "ext": ".avi",
+        "video_args": ["-c:v", "libxvid", "-qscale:v", "4", "-tag:v", "XVID"],
+        "audio_args": ["-c:a", "libmp3lame", "-b:a", "192k"],
+    },
+    "WEBM (.webm)": {
+        "ext": ".webm",
+        "video_args": ["-c:v", "libvpx-vp9", "-crf", "32", "-b:v", "0", "-pix_fmt", "yuv420p"],
+        "audio_args": ["-c:a", "libopus", "-b:a", "128k"],
+    },
+}
+DEFAULT_FORMAT = "MP4 (.mp4)"
+
 
 def get_loopback_device(p):
     """Devuelve el dispositivo de loopback WASAPI del altavoz predeterminado."""
@@ -81,7 +111,7 @@ class RecorderApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Grabador de ventana")
-        self.root.geometry("520x750")
+        self.root.geometry("520x810")
         self.root.resizable(False, False)
 
         self.windows = []
@@ -93,6 +123,7 @@ class RecorderApp:
         self._video_tmp = None
         self._audio_tmp = None
         self._recording_audio = False
+        self._recording_format = FORMAT_OPTIONS[DEFAULT_FORMAT]
 
         self.custom_output_path = None  # ruta elegida por el usuario (o None = automática)
         self._last_save_dir = OUTPUT_DIR
@@ -197,6 +228,22 @@ class RecorderApp:
 
         if not self.volume_available:
             self.volume_scale.config(state="disabled")
+
+        # --- Formato de video de salida ---
+        format_frame = ttk.Frame(self.root)
+        format_frame.pack(fill="x", **pad)
+
+        ttk.Label(format_frame, text="Formato de video:").pack(anchor="w")
+
+        self.format_var = tk.StringVar(value=DEFAULT_FORMAT)
+        self.format_combo = ttk.Combobox(
+            format_frame,
+            textvariable=self.format_var,
+            state="readonly",
+            values=list(FORMAT_OPTIONS.keys()),
+        )
+        self.format_combo.pack(fill="x", pady=(4, 0))
+        self.format_combo.bind("<<ComboboxSelected>>", self._on_format_change)
 
         # --- Ubicación y nombre de guardado ---
         save_frame = ttk.Frame(self.root)
@@ -373,26 +420,43 @@ class RecorderApp:
         self.root.after(2500, self.refresh_windows)
 
     # ------------------------------------------------------------------
+    # Formato de video
+    # ------------------------------------------------------------------
+    def get_selected_format(self):
+        return FORMAT_OPTIONS.get(self.format_var.get(), FORMAT_OPTIONS[DEFAULT_FORMAT])
+
+    def _on_format_change(self, event=None):
+        # Si ya se había elegido una ubicación, actualizamos su extensión
+        # para que siempre coincida con el formato seleccionado.
+        if self.custom_output_path:
+            fmt = self.get_selected_format()
+            base, _ext = os.path.splitext(self.custom_output_path)
+            self.custom_output_path = base + fmt["ext"]
+            self.save_path_var.set(self.custom_output_path)
+
+    # ------------------------------------------------------------------
     # Ubicación de guardado
     # ------------------------------------------------------------------
     def choose_save_location(self):
+        fmt = self.get_selected_format()
+        ext = fmt["ext"]
         default_name = (
-            f"recording_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.mp4"
+            f"recording_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}{ext}"
         )
         path = filedialog.asksaveasfilename(
             title="Guardar grabación como",
             initialdir=self._last_save_dir,
             initialfile=default_name,
-            defaultextension=".mp4",
-            filetypes=[("Video MP4", "*.mp4")],
+            defaultextension=ext,
+            filetypes=[(f"Video {ext[1:].upper()}", f"*{ext}")],
         )
         if not path:
             return
 
         # Sin importar lo que el usuario haya escrito, la extensión
-        # siempre queda forzada a .mp4.
+        # siempre queda forzada al formato elegido en el combo.
         base, _ext = os.path.splitext(path)
-        path = base + ".mp4"
+        path = base + ext
 
         self.custom_output_path = path
         self._last_save_dir = os.path.dirname(path)
@@ -449,11 +513,14 @@ class RecorderApp:
         os.makedirs(OUTPUT_DIR, exist_ok=True)
         stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
 
+        self._recording_format = self.get_selected_format()
+        ext = self._recording_format["ext"]
+
         if self.custom_output_path:
             self.output_path = self.custom_output_path
             os.makedirs(os.path.dirname(self.output_path), exist_ok=True)
         else:
-            self.output_path = os.path.join(OUTPUT_DIR, f"recording_{stamp}.mp4")
+            self.output_path = os.path.join(OUTPUT_DIR, f"recording_{stamp}{ext}")
 
         want_audio = self.audio_var.get() and HAS_AUDIO
         self._recording_audio = False
@@ -493,6 +560,7 @@ class RecorderApp:
         self.play_btn.config(state="disabled")
         self.combo.config(state="disabled")
         self.save_btn.config(state="disabled")
+        self.format_combo.config(state="disabled")
 
         # Ya se fijó el destino de esta grabación; dejamos el campo listo
         # para que la próxima vuelva a ser "automática" salvo que el
@@ -608,6 +676,7 @@ class RecorderApp:
         self.stop_btn.config(state="disabled")
         self.combo.config(state="readonly")
         self.save_btn.config(state="normal")
+        self.format_combo.config(state="readonly")
         self._show_placeholder_preview("Sin grabación en curso")
 
         has_audio_file = (
@@ -621,14 +690,17 @@ class RecorderApp:
         self.status_var.set("Comprimiendo video...")
         self.root.update_idletasks()
 
-        if self._encode_output(self._video_tmp, audio_path, self.output_path):
+        fmt = getattr(self, "_recording_format", FORMAT_OPTIONS[DEFAULT_FORMAT])
+
+        if self._encode_output(self._video_tmp, audio_path, self.output_path, fmt):
             self._cleanup_temp_files()
         else:
-            # Si falla la compresión, nos quedamos con el video sin comprimir
-            # para no perder la grabación.
+            # Si falla la conversión al formato elegido, nos quedamos con el
+            # video sin comprimir (siempre en .mp4) para no perder la
+            # grabación.
             self.output_path = self._video_tmp
             self.status_var.set(
-                "No se pudo comprimir el video; se guardó la versión sin comprimir."
+                "No se pudo generar el formato elegido; se guardó un .mp4 sin comprimir."
             )
             self.play_btn.config(state="normal")
             return
@@ -642,25 +714,20 @@ class RecorderApp:
         else:
             self.status_var.set("La grabación no se guardó correctamente.")
 
-    def _encode_output(self, video_path, audio_path, out_path):
-        """Recomprime el video capturado (mp4v sin comprimir) a H.264,
-        opcionalmente muxeando el audio, para reducir el tamaño del archivo
-        conservando buena calidad visual."""
+    def _encode_output(self, video_path, audio_path, out_path, fmt):
+        """Recomprime el video capturado (mp4v sin comprimir) al formato
+        elegido por el usuario, opcionalmente muxeando el audio, para
+        reducir el tamaño del archivo conservando buena calidad visual."""
         try:
             ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
             cmd = [ffmpeg_exe, "-y", "-i", video_path]
             if audio_path:
                 cmd += ["-i", audio_path]
 
-            cmd += [
-                "-c:v", "libx264",
-                "-preset", "slow",
-                "-crf", "23",
-                "-pix_fmt", "yuv420p",
-            ]
+            cmd += fmt["video_args"]
 
             if audio_path:
-                cmd += ["-c:a", "aac", "-b:a", "128k", "-shortest"]
+                cmd += fmt["audio_args"] + ["-shortest"]
 
             cmd += [out_path]
 

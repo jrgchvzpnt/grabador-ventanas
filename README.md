@@ -27,17 +27,20 @@ reproducir el resultado al finalizar.
   interrumpir el video que estás viendo/grabando.
 - **Pausa / reanudar**: pausa la grabación (video y audio) sin detenerla;
   el tiempo en pausa no queda incluido en el archivo final.
+- **Formato de video**: un combo para elegir el formato de salida entre
+  los más populares — **MP4, MKV, MOV, AVI y WEBM**. Cada uno usa el
+  códec de video/audio más adecuado para ese contenedor (por ejemplo
+  H.264+AAC para MP4/MKV/MOV, Xvid+MP3 para AVI, VP9+Opus para WEBM).
 - **Guardar como...**: permite elegir la carpeta y el nombre del archivo
-  antes de grabar. La extensión queda siempre forzada a `.mp4`, sin
-  importar lo que se escriba en el diálogo.
+  antes de grabar. La extensión queda siempre forzada al formato elegido
+  en el combo, sin importar lo que se escriba en el diálogo.
 - **Vista previa en vivo**: muestra en la propia ventana de la app el
   contenido que se está grabando en tiempo real, con un indicador
   "PAUSADO" superpuesto cuando corresponde.
 - **Compresión automática**: al detener la grabación, el video (capturado
-  internamente sin comprimir) se recodifica a **H.264** (`libx264`,
-  `crf 23`, `preset slow`) usando `ffmpeg`, reduciendo bastante el tamaño
-  del archivo sin pérdida notable de calidad. El audio se mezcla en el
-  mismo paso (AAC).
+  internamente sin comprimir) se recodifica usando `ffmpeg` al formato
+  elegido, reduciendo bastante el tamaño del archivo sin pérdida notable
+  de calidad. El audio se mezcla en el mismo paso.
 - **Reproducción**: botón para abrir la grabación resultante con el
   reproductor de video predeterminado de Windows.
 
@@ -88,18 +91,21 @@ python app.py
 4. (Opcional) Ajusta la barra **"Volumen de la PC"** para subir o bajar
    el volumen general de Windows sin interrumpir el video ni salir de la
    app.
-5. (Opcional) Pulsa **Guardar como...** para elegir en qué carpeta y con
+5. (Opcional) Elige el **"Formato de video"** deseado (MP4, MKV, MOV, AVI
+   o WEBM). Por defecto se usa MP4.
+6. (Opcional) Pulsa **Guardar como...** para elegir en qué carpeta y con
    qué nombre se guardará el video. El diálogo siempre fuerza la
-   extensión `.mp4`, aunque escribas otra (por ejemplo, `video.avi` se
-   guardará igualmente como `video.mp4`). Si no eliges nada, el video se
+   extensión del formato elegido en el paso anterior, aunque escribas
+   otra (por ejemplo, si el formato es MP4 y escribes `video.avi`, se
+   guardará igual como `video.mp4`). Si no eliges nada, el video se
    guarda automáticamente en `recordings/` con un nombre basado en la
    fecha y hora.
-6. Pulsa **Iniciar grabación**. La ventana seleccionada se traerá al frente
+7. Pulsa **Iniciar grabación**. La ventana seleccionada se traerá al frente
    y comenzará la captura; la vista previa mostrará lo que se está
    grabando.
-7. Usa **Pausar / Reanudar** para pausar temporalmente sin cortar la
+8. Usa **Pausar / Reanudar** para pausar temporalmente sin cortar la
    grabación.
-8. Pulsa **Detener** para finalizar. La app recomprime automáticamente el
+9. Pulsa **Detener** para finalizar. La app recomprime automáticamente el
    video (esto puede tardar unos segundos según la duración) y muestra la
    ruta del archivo final junto con su tamaño en MB.
 9. Pulsa **Reproducir** para abrir el video con el reproductor
@@ -107,8 +113,18 @@ python app.py
 
 Si no usaste "Guardar como...", los videos se guardan en la carpeta
 `recordings/` dentro del proyecto, con nombre
-`recording_AAAAMMDD_HHMMSS.mp4`. Esa carpeta está excluida del
-control de versiones (ver `.gitignore`).
+`recording_AAAAMMDD_HHMMSS.<extensión>` (según el formato elegido). Esa
+carpeta está excluida del control de versiones (ver `.gitignore`).
+
+### Formatos disponibles
+
+| Formato | Video | Audio | Notas |
+|---------|-------|-------|-------|
+| **MP4** (por defecto) | H.264 (`libx264`) | AAC | El más compatible en general; recomendado. |
+| **MKV** | H.264 (`libx264`) | AAC | Contenedor flexible, misma calidad que MP4. |
+| **MOV** | H.264 (`libx264`) | AAC | Compatible con QuickTime/macOS. |
+| **AVI** | Xvid (`libxvid`) | MP3 | Formato más antiguo, mayor compatibilidad con reproductores viejos. |
+| **WEBM** | VP9 (`libvpx-vp9`) | Opus | Pensado para web; archivos más livianos. |
 
 ## Generar un ejecutable (.exe)
 
