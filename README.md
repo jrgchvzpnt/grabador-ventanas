@@ -63,6 +63,22 @@ Dependencias incluidas en `requirements.txt`:
 python app.py
 ```
 
+## Generar un ejecutable (.exe)
+
+Si prefieres no instalar Python, puedes empaquetar la app en un único
+`.exe` para Windows con [PyInstaller](https://pyinstaller.org/):
+
+```bash
+pip install pyinstaller
+pyinstaller --onefile --windowed --name GrabadorVentanas app.py
+```
+
+El ejecutable resultante queda en `dist/GrabadorVentanas.exe` y no requiere
+tener Python ni las dependencias instaladas (todo, incluido `ffmpeg`,
+queda embebido dentro del `.exe`). Las carpetas `build/`, `dist/` y el
+archivo `.spec` generados por PyInstaller no se versionan (ver
+`.gitignore`).
+
 1. Abre la ventana/pestaña del navegador (o cualquier otra) que quieras
    grabar.
 2. En la app, pulsa **Actualizar** si la ventana no aparece en la lista, y
